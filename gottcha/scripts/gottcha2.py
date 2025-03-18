@@ -1455,13 +1455,6 @@ def main(args):
         datefmt='%Y-%m-%d %H:%M',
     )
 
-    #dependency check
-    if sys.version_info < (3,6):
-        sys.exit("[ERROR] Python 3.6 or above is required.")
-    
-    dependency_check("minimap2")
-    # dependency_check("gawk")
-
     #prepare output object
     argvs.relAbu = argvs.relAbu.upper()
     outfile_full = "%s/%s.full.tsv" % (argvs.outdir, argvs.prefix)
@@ -1528,6 +1521,9 @@ def main(args):
         sys.exit( "[%s] ERROR: %s not found.\n" % (time_spend(begin_t), argvs.database+".stats") )
     print_message( "Done.", argvs.silent, begin_t, logfile )
 
+    # Track whether we generated a SAM file from input reads
+    sam_file_generated = False
+
     #main process
     if argvs.input:
         print_message( "Running read-mapping...", argvs.silent, begin_t, logfile )
@@ -1542,6 +1538,7 @@ def main(args):
             print_message( f"Done mapping reads to {argvs.dbLevel} signature database.", argvs.silent, begin_t, logfile )
             print_message( f"Mapped SAM file saved to {samfile}.", argvs.silent, begin_t, logfile )
             sam_fp = open( samfile, "r" )
+            sam_file_generated = True  # Mark that we have a valid SAM file
 
     # remove multiple hits
     if not argvs.skipRemoveMultiple:
@@ -1553,9 +1550,6 @@ def main(args):
         if flag:
             os.rename(samfile_temp, samfile_output)
             samfile = samfile_output
-            # Note:
-            # When input of the gottcha2 is a SAM file and new outdir/prefix is provided, the output will be saved to that location.
-            # If not, the output will overwrite the original SAM file.
         gc.collect()
 
     if argvs.extract:
@@ -1570,8 +1564,9 @@ def main(args):
         read_count = extract_read_from_sam(os.path.abspath(samfile), out_fp, taxa_list, argvs.threads, argvs.matchFactor)
         print_message( f"Done extracting {read_count} valid reads to '{outfile}'.", argvs.silent, begin_t, logfile )
     elif argvs.extractFasta is not None:
-        if argvs.sam:
-            # First process the SAM file to generate taxonomy
+        # Check if we either have a SAM file provided via --sam or generated one from input reads
+        if argvs.sam or sam_file_generated:
+            # Process the SAM file to generate taxonomy
             print_message("Loading SAM file...", argvs.silent, begin_t, logfile)
             (res, mapped_r_cnt) = process_sam_file(os.path.abspath(samfile), argvs.threads, argvs.matchFactor)
             print_message(f"Done processing SAM file. {mapped_r_cnt} qualified mapped reads loaded.", argvs.silent, begin_t, logfile)
@@ -1597,7 +1592,8 @@ def main(args):
             else:
                 print_message("No qualified mapped reads found. Cannot extract sequences.", argvs.silent, begin_t, logfile)
         else:
-            print_message("Error: --extractFasta requires a SAM file.", argvs.silent, begin_t, logfile, errorout=1)
+            # This should never happen with the new logic, but keep as safety
+            print_message("Error: --extractFasta requires input reads or a SAM file.", argvs.silent, begin_t, logfile, errorout=1)
     else:
         print_message( "Loading SAM file...", argvs.silent, begin_t, logfile )
         (res, mapped_r_cnt) = process_sam_file( os.path.abspath(samfile), argvs.threads, argvs.matchFactor)
