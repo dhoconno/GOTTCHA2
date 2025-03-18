@@ -43,18 +43,18 @@ except ImportError:
 def parse_params(ver, args):
     """
     Parse and validate command line arguments for GOTTCHA2.
-    
+
     This function sets up the argument parser, defines all possible command-line
     options, parses the provided arguments, and performs validation to ensure
     the configuration is valid and complete.
-    
+
     Parameters:
         ver (str): Version string to display in help messages
         args (list): Command line arguments to parse
-        
+
     Returns:
         argparse.Namespace: Object containing all validated arguments
-        
+
     Raises:
         SystemExit: If validation fails or --version is specified
     """
@@ -89,8 +89,8 @@ def parse_params(ver, args):
                     help="Mismatch penalty for the aligner. [default: 10]")
 
     p.add_argument('-e', '--extract', metavar='[TAXON[,TAXON2, TAXON3...]] or [@FILE]', type=str, default=None,
-                    help="""Extract reads mapping to specific TAXIDs. Either comma-separated list 
-                    or filename with one taxid per line. Examples: 
+                    help="""Extract reads mapping to specific TAXIDs. Either comma-separated list
+                    or filename with one taxid per line. Examples:
                     -e "1234,5678" or -e @taxids.txt [default: None]""")
 
     p.add_argument('-ef', '--extractFasta', metavar='<INT>', type=int, nargs='?', const=20, default=None,
@@ -166,6 +166,9 @@ def parse_params(ver, args):
     if args_parsed.extract and args_parsed.extractFasta:
         p.error( '--extract and --extractFasta are incompatible options.' )
 
+    if args_parsed.extractFasta and not args_parsed.format == "tsv":
+        p.error( '--extractFasta is incompatible with non tsv output options.' )
+
     if not args_parsed.database:
         p.error( '--database option is missing.' )
 
@@ -221,7 +224,7 @@ def parse_params(ver, args):
                 args_parsed.dbLevel = name.group(1)
             except:
                 pass
-        
+
         if not args_parsed.dbLevel:
             p.error( '--dbLevel is missing and cannot be auto-detected.' )
 
@@ -243,16 +246,16 @@ def parse_params(ver, args):
 def dependency_check(cmd):
     """
     Verify that external dependencies are available in the system.
-    
+
     Attempts to execute the specified command with --help and checks if it runs
     successfully. Exits the program if the command is not found or fails.
-    
+
     Parameters:
         cmd (str): Command to check
-        
+
     Returns:
         None
-        
+
     Raises:
         SystemExit: If the command is not found or fails
     """
@@ -265,17 +268,17 @@ def dependency_check(cmd):
 def merge_ranges(ranges):
     """
     Merge overlapping or consecutive genomic ranges.
-    
+
     Takes a list of (start, end) tuples representing genomic ranges and merges
     any ranges that overlap or are directly adjacent (consecutive positions).
     This is used to calculate accurate linear coverage for mapped reads.
-    
+
     Parameters:
         ranges (list): List of (start, end) tuples representing genomic ranges
-        
+
     Returns:
         list: List of merged (start, end) tuples with no overlaps
-    
+
     Example:
         >>> merge_ranges([(1, 5), (4, 8), (10, 12)])
         [(1, 8), (10, 12)]
@@ -299,17 +302,17 @@ def merge_ranges(ranges):
 def worker(filename, chunkStart, chunkSize, matchFactor):
     """
     Process a chunk of a SAM file to extract mapping information.
-    
+
     This function is intended to be run in parallel to process different chunks
     of a SAM file. It parses lines within the specified chunk and builds a dictionary
     of reference sequences with their mapped regions, base counts, read counts, etc.
-    
+
     Parameters:
         filename (str): Path to the SAM file to process
         chunkStart (int): Byte position in the file where to start reading
         chunkSize (int): Number of bytes to read from the start position
         matchFactor (float): Minimum fraction required for a valid match
-        
+
     Returns:
         dict: Dictionary with reference sequences as keys and mapping statistics as values
     """
@@ -346,15 +349,15 @@ def worker(filename, chunkStart, chunkSize, matchFactor):
 def parse(line, matchFactor):
     """
     Parse a line from a SAM file and extract relevant mapping information.
-    
-    Parses alignment details from a SAM format line, including reference ID, 
+
+    Parses alignment details from a SAM format line, including reference ID,
     match position, mismatches, sequence quality, and flags. Determines if
     the alignment is a valid match based on matchFactor criteria.
-    
+
     Parameters:
         line (str): A line from a SAM file
         matchFactor (float): Minimum fraction required for a valid match
-        
+
     Returns:
         tuple: (
             ref (str): Reference identifier,
@@ -362,13 +365,13 @@ def parse(line, matchFactor):
             mismatches (int): Number of mismatches,
             read_name (str): Name of the read,
             read_seq (str): Read sequence,
-            read_qual (str): Read quality string, 
+            read_qual (str): Read quality string,
             flag (str): SAM flag,
             cigar (str): CIGAR string,
             primary_alignment_flag (bool): Whether this is a primary alignment,
             valid_flag (bool): Whether this alignment meets match criteria
         )
-    
+
     Example:
         SAM format example:
         read1   0   ABC|1|100|GCF_12345|    11  0   5S10M3S *   0   0   GGGGGCCCCCCCCCCGGG  HHHHHHHHHHHHHHHHHH  NM:i:0  MD:Z:10 AS:i:10 XS:i:0
@@ -404,10 +407,10 @@ def parse(line, matchFactor):
 def time_spend(start):
     """
     Calculate and format elapsed time since a given start time.
-    
+
     Parameters:
         start (float): Starting time in seconds (as returned by time.time())
-        
+
     Returns:
         str: Formatted time string in HH:MM:SS format
     """
@@ -418,15 +421,15 @@ def time_spend(start):
 def chunkify(fname, size=1*1024*1024):
     """
     Split a file into chunks for parallel processing.
-    
+
     Divides a file into chunks of approximately the specified size, ensuring
     that all alignments for a single read are kept in the same chunk.
     This is critical for accurate processing of multi-mapped reads.
-    
+
     Parameters:
         fname (str): Path to the file to be chunked
         size (int): Approximate chunk size in bytes (default: 1MB)
-        
+
     Yields:
         tuple: (chunkStart, chunkSize) where:
             - chunkStart (int): Byte position to start reading
@@ -458,15 +461,15 @@ def chunkify(fname, size=1*1024*1024):
 def process_sam_file(sam_fn, numthreads, matchFactor):
     """
     Process a SAM file using parallel execution to extract mapping information.
-    
+
     Divides the SAM file into chunks, processes each chunk in parallel using a thread pool,
     and then merges the results. Computes the linear coverage for each reference sequence.
-    
+
     Parameters:
         sam_fn (str): Path to the SAM file
         numthreads (int): Number of parallel processes to use
         matchFactor (float): Minimum fraction required for a valid match
-        
+
     Returns:
         tuple: (
             result (dict): Dictionary with references as keys and mapping statistics as values,
@@ -522,11 +525,11 @@ def process_sam_file(sam_fn, numthreads, matchFactor):
 def isin_target_taxa(taxid, taxa_list):
     """
     Check if one taxid is a descendant of another in the taxonomy tree.
-    
+
     Parameters:
         taxid (str): The taxid to check
         target_taxa (list): The list of target taxa to check
-        
+
     Returns:
         bool: True if taxid is in target taxa, False otherwise
     """
@@ -534,23 +537,23 @@ def isin_target_taxa(taxid, taxa_list):
     for target in taxa_list:
         if f"|{target}|" in fullLineage:
             return True
-        
+
     return False
 
 def extract_read_from_sam(sam_fn, o, taxa_list, numthreads, matchFactor):
     """
     Extract reads from a SAM file that map to a specific taxid or its descendants.
-    
+
     Processes the SAM file in parallel chunks and writes matching reads in FASTQ format
     to the provided output file.
-    
+
     Parameters:
         sam_fn (str): Path to the SAM file
         o (file): Output file handle to write extracted reads
         taxa_str (str): Taxanomy string to extract reads for (including descendants)
         numthreads (int): Number of parallel processes to use
         matchFactor (float): Minimum fraction required for a valid match
-        
+
     Returns:
         None: Results are written directly to the output file
     """
@@ -576,17 +579,17 @@ def extract_read_from_sam(sam_fn, o, taxa_list, numthreads, matchFactor):
 def ReadExtractWorker(filename, chunkStart, chunkSize, taxa_list, matchFactor):
     """
     Worker function to extract reads from a chunk of SAM file.
-    
+
     Processes a chunk of SAM file and extracts reads that map to a specific taxid
     or its descendants, formatting them as FASTQ entries.
-    
+
     Parameters:
         filename (str): Path to the SAM file
         chunkStart (int): Byte position to start reading
         chunkSize (int): Number of bytes to read
         taxa_str (str): Taxid to filter reads for
         matchFactor (float): Minimum fraction required for a valid match
-        
+
     Returns:
         str: FASTQ-formatted string containing all matching reads
     """
@@ -613,19 +616,19 @@ def ReadExtractWorker(filename, chunkStart, chunkSize, taxa_list, matchFactor):
         if isin_target_taxa(t, taxa_list):
             readstr += f"@{rname} {ref}:{region[0]}..{region[1]} {cigr} NM:i:{nm}\n{rseq}\n+\n{rq}\n"
             read_count += 1
-    
+
     return readstr, read_count
 
 def seqReverseComplement(seq):
     """
     Generate the reverse complement of a DNA sequence.
-    
+
     Creates a mapping dictionary for complementary bases and applies it to the
     reversed sequence. Handles both uppercase and lowercase nucleotides.
-    
+
     Parameters:
         seq (str): DNA sequence string
-        
+
     Returns:
         str: Reverse complemented DNA sequence
     """
@@ -636,15 +639,15 @@ def seqReverseComplement(seq):
 def group_refs_to_strains(r):
     """
     Group reference mapping results by strains and calculate strain-level statistics.
-    
+
     Converts the mapping results dictionary to a pandas DataFrame and groups by
     taxonomic identifier. Calculates various statistics including total mapped bases,
     read counts, coverage, and depth of coverage.
-    
+
     Parameters:
         r (dict): Dictionary with reference sequences as keys and mapping statistics
                  as values (output from process_sam_file)
-        
+
     Returns:
         pandas.DataFrame: DataFrame with strain-level statistics
     """
@@ -692,11 +695,11 @@ def group_refs_to_strains(r):
 def aggregate_taxonomy(r, abu_col, tg_rank, mc, mr, ml, mz):
     """
     Aggregate strain-level results to higher taxonomic ranks.
-    
+
     Starting from strain-level mapping data, this function rolls up statistics to
     higher taxonomic ranks (species, genus, family, etc.). It applies the specified
     cutoff criteria to filter results and marks entries that fall below these thresholds.
-    
+
     Parameters:
         r (dict): Dictionary with reference sequences as keys and mapping stats as values
         abu_col (str): Column name to use for abundance calculations
@@ -705,7 +708,7 @@ def aggregate_taxonomy(r, abu_col, tg_rank, mc, mr, ml, mz):
         mr (int): Minimum read count threshold
         ml (int): Minimum linear length threshold
         mz (float): Maximum Z-score threshold (0 to disable)
-        
+
     Returns:
         pandas.DataFrame: DataFrame with rolled-up taxonomy at all ranks
     """
@@ -720,7 +723,7 @@ def aggregate_taxonomy(r, abu_col, tg_rank, mc, mr, ml, mz):
     qualified_idx = (str_df['LINEAR_LEN']/str_df['TOL_SIG_LENGTH'] >= mc) & \
                     (str_df['READ_COUNT'] >= mr) & \
                     (str_df['LINEAR_LEN'] >= ml)
-    
+
     if mz > 0:
         qualified_idx &= (str_df['ZSCORE'] <= mz)
 
@@ -786,15 +789,15 @@ def aggregate_taxonomy(r, abu_col, tg_rank, mc, mr, ml, mz):
 def pile_lvl_zscore(tol_bp, tol_sig_len, linear_len):
     """
     Calculate Z-score for the depth of coverage of mapped regions.
-    
+
     This determines how unusual the coverage depth is compared to expected depth
     based on a statistical model. Higher Z-scores may indicate biased mapping.
-    
+
     Parameters:
         tol_bp (int): Total number of mapped bases
         tol_sig_len (int): Total length of the signature
         linear_len (int): Linear length (de-duplicated) covered by mappings
-        
+
     Returns:
         float: Z-score for the depth distribution (or 0 if calculation fails)
     """
@@ -809,20 +812,20 @@ def pile_lvl_zscore(tol_bp, tol_sig_len, linear_len):
             return (lin_doc-avg_doc)/sd
     except:
         return 0
-    
+
 def generaete_taxonomy_file(rep_df, o, fullreport_o, fmt="tsv"):
     """
     Generate taxonomy result files in TSV or CSV format.
-    
+
     Creates two files: a summary file with only qualified results, and
     a full report with all results including filtered entries.
-    
+
     Parameters:
         rep_df (pandas.DataFrame): Taxonomy results DataFrame
         o (file): Output file handle for the summary results
         fullreport_o (str): Path for the full report file
         fmt (str): Output format, either 'tsv' or 'csv'
-        
+
     Returns:
         bool: True if successful
     """
@@ -841,10 +844,10 @@ def generaete_taxonomy_file(rep_df, o, fullreport_o, fmt="tsv"):
     qualified_df = rep_df.loc[qualified_idx, cols[:10]]
 
     sep = ',' if fmt=='csv' else '\t'
-    
+
     # save full report
     rep_df[cols].to_csv(fullreport_o, index=False, sep=sep, float_format='%.6f', quoting=2 if fmt=='csv' else 0)
-    
+
     # save summary
     qualified_df.to_csv(o, index=False, sep=sep, float_format='%.6f', quoting=2 if fmt=='csv' else 0)
 
@@ -853,19 +856,19 @@ def generaete_taxonomy_file(rep_df, o, fullreport_o, fmt="tsv"):
 def generaete_biom_file(res_df, o, tg_rank, sampleid):
     """
     Generate a BIOM format file from taxonomy results.
-    
+
     Creates a BIOM (Biological Observation Matrix) formatted file for
     compatibility with downstream microbiome analysis tools.
-    
+
     Parameters:
         res_df (pandas.DataFrame): Taxonomy results DataFrame
         o (file): Output file handle
         tg_rank (str): Target taxonomic rank to include in the output
         sampleid (str): Sample identifier
-        
+
     Returns:
         bool: True if successful
-        
+
     Raises:
         SystemExit: If the biom library version is incompatible
     """
@@ -892,14 +895,14 @@ def generaete_biom_file(res_df, o, tg_rank, sampleid):
 def generaete_lineage_file(target_df, o):
     """
     Generate a lineage file showing taxonomic paths with abundances.
-    
+
     Creates a tab-delimited file with abundance values followed by
     the complete taxonomic lineage for each taxon.
-    
+
     Parameters:
         target_df (pandas.DataFrame): DataFrame containing abundance and taxids
         o (str): Output file path
-        
+
     Returns:
         bool: True if successful
     """
@@ -912,11 +915,11 @@ def generaete_lineage_file(target_df, o):
 def readMapping(reads, db, threads, mm_penalty, presetx, samfile, logfile):
     """
     Map reads to the reference database using minimap2.
-    
+
     Builds and executes a command to run minimap2 for read mapping, with parameters
     adjusted based on input settings. Filters the SAM output to keep only relevant
     alignments.
-    
+
     Parameters:
         reads (list): List of input read file objects
         db (str): Path to the minimap2 database (without .mmi extension)
@@ -926,7 +929,7 @@ def readMapping(reads, db, threads, mm_penalty, presetx, samfile, logfile):
         samfile (str): Output SAM file path
         logfile (str): Log file path
         nanopore (bool): Whether to use Nanopore-specific settings
-        
+
     Returns:
         tuple: (
             exitcode (int): Exit code from the mapping process,
@@ -938,7 +941,7 @@ def readMapping(reads, db, threads, mm_penalty, presetx, samfile, logfile):
 
     # Minimap2 options for short reads: the options here is essentailly the -x 'sr' equivalent with some modifications on scoring
     sr_opts = f"--sr --frag=yes -b0 -r100 -f1000,5000 -n2 -m20 -s40 -g100 -2K50m -k24 -w12 -A1 -B{mm_penalty} -O30 -E30 -a -N20 --secondary=no --sam-hit-only"
-    
+
     if presetx != 'sr':
         sr_opts = f"-x {presetx} -N20 --secondary=no --sam-hit-only -a"
 
@@ -982,7 +985,7 @@ def remove_multiple_hits(samfile, samfile_temp):
     aln_count = len(df)
     logging.info(f'Total alignments in SAM file: {aln_count}')
 
-    df[['AS']] = df[['AS']].astype('int16') 
+    df[['AS']] = df[['AS']].astype('int16')
 
     logging.info(f'Filtering non-primary hits...')
     # for each row, if the flag bitwise AND with 256 (not primary alignment) or 2048 (supplementary), then remove them from the df
@@ -1011,7 +1014,7 @@ def remove_multiple_hits(samfile, samfile_temp):
             for idx, line in enumerate(fin):
                 if not idx%100000:
                     logging.debug(f'Processed {idx} lines...')
-                
+
                 if idx in idxmax_set:
                     fout.write(line)
         logging.info(f'Done writing hits.')
@@ -1022,16 +1025,16 @@ def remove_multiple_hits(samfile, samfile_temp):
 def loadDatabaseStats(db_stats_file):
     """
     Load database signature statistics from a stats file.
-    
+
     Reads a tab-delimited stats file containing information about
     taxonomic signatures and their lengths.
-    
+
     Parameters:
         db_stats_file (str): Path to the database stats file
-        
+
     Returns:
         dict: Dictionary with taxids as keys and signature lengths as values
-        
+
     Note:
         The input stats file is an 8-column tab-delimited file with:
         1. Rank
@@ -1059,20 +1062,20 @@ def loadDatabaseStats(db_stats_file):
 def print_message(msg, silent, start, logfile, errorout=0):
     """
     Print and log a timestamped message.
-    
+
     Writes a message to the log file and optionally to stderr. Can also
     terminate the program with an error message.
-    
+
     Parameters:
         msg (str): Message to print
         silent (bool): If True, suppress output to stderr
         start (float): Start time for timestamp calculation
         logfile (str): Path to the log file
         errorout (int): If non-zero, exit with error after printing
-        
+
     Returns:
         None
-        
+
     Raises:
         SystemExit: If errorout is non-zero
     """
@@ -1107,81 +1110,81 @@ def parse_taxids(taxid_arg):
 def FastaExtractWorker(filename, chunkStart, chunkSize, matchFactor, max_per_ref):
     """
     Worker function to extract sequences in FASTA format from a chunk of a SAM file.
-    
+
     Parameters:
         filename (str): Path to the SAM file
         chunkStart (int): Starting position in the file
         chunkSize (int): Size of the chunk to process
         matchFactor (float): Minimum fraction required for a valid match
         max_per_ref (int): Maximum sequences to collect per reference
-        
+
     Returns:
         dict: Dictionary with references as keys and lists of FASTA entries as values
     """
     ref_seqs = {}
-    
+
     # Process the SAM file chunk
     f = open(filename)
     f.seek(chunkStart)
     lines = f.read(chunkSize).splitlines()
-    
+
     for line in lines:
         ref, region, nm, rname, rseq, rq, flag, cigr, pri_aln_flag, valid_flag = parse(line, matchFactor)
-        
+
         if not (pri_aln_flag and valid_flag):
             continue
-            
+
         # Initialize entry for this reference if not present
         if ref not in ref_seqs:
             ref_seqs[ref] = []
-            
+
         # Only collect up to max_per_ref sequences per reference
         if len(ref_seqs[ref]) >= max_per_ref:
             continue
-            
+
         # Handle reverse complement if needed
         if int(flag) & 16:
             g = findall(r'\d+\w', cigr)
             cigr = "".join(list(reversed(g)))
             rseq = seqReverseComplement(rseq)
-            
+
         # Create FASTA entry
         fasta_entry = f">{rname}|{ref}:{region[0]}..{region[1]}\n{rseq}\n"
         ref_seqs[ref].append(fasta_entry)
-    
+
     return ref_seqs
 
 def extract_fasta_from_sam(sam_fn, o, numthreads, matchFactor, max_per_ref=20):
     """
     Extract sequences matching references in the SAM file to FASTA format.
-    
+
     Extracts up to max_per_ref sequences for each reference in the SAM file.
-    
+
     Parameters:
         sam_fn (str): Path to the SAM file
         o (file): Output file handle for the extracted sequences
         numthreads (int): Number of threads to use for processing
         matchFactor (float): Minimum fraction required for a valid match
         max_per_ref (int): Maximum number of sequences to extract per reference
-        
+
     Returns:
         tuple: (ref_count, seq_count) - Number of references and total sequences extracted
     """
     pool = Pool(processes=numthreads)
     jobs = []
     results = []
-    
+
     # Divide the work into chunks for parallel processing
     for chunkStart, chunkSize in chunkify(sam_fn):
         jobs.append(pool.apply_async(FastaExtractWorker, (sam_fn, chunkStart, chunkSize, matchFactor, max_per_ref)))
-        
+
     # Wait for all jobs to finish and collect results
     for job in jobs:
         results.append(job.get())
-    
+
     # Cleanup
     pool.close()
-    
+
     # Merge results from all workers
     all_refs = {}
     for result in results:
@@ -1189,7 +1192,7 @@ def extract_fasta_from_sam(sam_fn, o, numthreads, matchFactor, max_per_ref=20):
             if ref not in all_refs:
                 all_refs[ref] = []
             all_refs[ref].extend(seqs)
-    
+
     # Write sequences, respecting max_per_ref limit
     total_seqs = 0
     for ref, seqs in all_refs.items():
@@ -1197,15 +1200,15 @@ def extract_fasta_from_sam(sam_fn, o, numthreads, matchFactor, max_per_ref=20):
             if i < max_per_ref:
                 o.write(seq_entry)
                 total_seqs += 1
-    
+
     return len(all_refs), total_seqs
 
 def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, max_per_taxon=20):
     """
     Extract sequences mapping to taxa from the full taxonomy report.
-    
+
     For each taxon in the full report, extract up to max_per_taxon sequences.
-    
+
     Parameters:
         sam_fn (str): Path to the SAM file
         full_tsv_fn (str): Path to the full taxonomy report file
@@ -1213,45 +1216,45 @@ def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, m
         numthreads (int): Number of threads to use for processing
         matchFactor (float): Minimum fraction required for a valid match
         max_per_taxon (int): Maximum number of sequences to extract per taxon
-        
+
     Returns:
         tuple: (taxon_count, seq_count) - Number of taxa and total sequences extracted
     """
     try:
-        print_message(f"Reading taxonomy file {full_tsv_fn}...", 
+        print_message(f"Reading taxonomy file {full_tsv_fn}...",
                       argvs.silent, begin_t, logfile)
-        taxa_df = pd.read_csv(full_tsv_fn, 
-                             sep='\t', 
+        taxa_df = pd.read_csv(full_tsv_fn,
+                             sep='\t',
                              engine='python',
                              quoting=3,
                              on_bad_lines='skip')
-        
-        print_message(f"Successfully loaded taxonomy profile with {len(taxa_df)} entries", 
+
+        print_message(f"Successfully loaded taxonomy profile with {len(taxa_df)} entries",
                     argvs.silent, begin_t, logfile)
     except Exception as e:
         print_message(f"Error reading taxonomy file: {e}", argvs.silent, begin_t, logfile, errorout=1)
-    
+
     # Filter out entries with "Filtered out" notes
     if 'NOTE' in taxa_df.columns:
         qualified_taxa = taxa_df[~taxa_df['NOTE'].str.contains('Filtered out', na=False)]
-        print_message(f"Found {len(qualified_taxa)} qualified taxa after filtering", 
+        print_message(f"Found {len(qualified_taxa)} qualified taxa after filtering",
                     argvs.silent, begin_t, logfile)
     else:
         qualified_taxa = taxa_df
-    
+
     # Ensure these columns exist
     if not all(col in qualified_taxa.columns for col in ['LEVEL', 'NAME', 'TAXID']):
-        print_message(f"Required columns missing in taxonomy file. Available columns: {qualified_taxa.columns.tolist()}", 
+        print_message(f"Required columns missing in taxonomy file. Available columns: {qualified_taxa.columns.tolist()}",
                     argvs.silent, begin_t, logfile, errorout=1)
-    
+
     # Pre-compute a mapping from reference taxids to qualified taxids
     # This avoids expensive lineage lookups during processing
-    print_message("Building taxonomy lookup index...", 
+    print_message("Building taxonomy lookup index...",
                 argvs.silent, begin_t, logfile)
-    
+
     taxa_dict = {}
     taxid_lineages = {}  # Cache for lineage lookups
-    
+
     # Gather all qualified taxids
     qualified_taxids = []
     for _, row in qualified_taxa[['LEVEL', 'NAME', 'TAXID']].iterrows():
@@ -1262,82 +1265,82 @@ def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, m
                 'level': str(row['LEVEL']).replace(' ', '_') if pd.notna(row['LEVEL']) else 'unknown',
                 'name': str(row['NAME']).replace(' ', '_') if pd.notna(row['NAME']) else 'unknown'
             }
-    
-    print_message(f"Starting extraction for {len(qualified_taxids)} taxa...", 
+
+    print_message(f"Starting extraction for {len(qualified_taxids)} taxa...",
                 argvs.silent, begin_t, logfile)
-    
+
     # Calculate total file size for progress reporting
     file_size = os.path.getsize(sam_fn)
     chunk_positions = list(chunkify(sam_fn))
     total_chunks = len(chunk_positions)
-    
-    print_message(f"Processing SAM file ({file_size/1024/1024:.1f} MB) in {total_chunks} chunks with {numthreads} threads", 
+
+    print_message(f"Processing SAM file ({file_size/1024/1024:.1f} MB) in {total_chunks} chunks with {numthreads} threads",
                 argvs.silent, begin_t, logfile)
-    
+
     # Process in batches to show progress
     batch_size = max(1, total_chunks // 10)  # Show progress in ~10% increments
-    
+
     # Process the SAM file in batches
     all_taxon_seqs = {}
     processed_chunks = 0
-    
+
     for i in range(0, total_chunks, batch_size):
         batch_chunks = chunk_positions[i:i+batch_size]
-        
+
         pool = Pool(processes=numthreads)
         jobs = []
-        
+
         # Submit jobs for this batch
         for chunkStart, chunkSize in batch_chunks:
             jobs.append(pool.apply_async(
-                OptimizedFastaWorker, 
+                OptimizedFastaWorker,
                 (sam_fn, chunkStart, chunkSize, taxa_dict, qualified_taxids, taxid_lineages, matchFactor, max_per_taxon)
             ))
-        
+
         # Process results as they complete
         for job in jobs:
             chunk_results = job.get()
             processed_chunks += 1
-            
+
             # Report progress
             progress = processed_chunks / total_chunks * 100
-            print_message(f"Progress: {progress:.1f}% ({processed_chunks}/{total_chunks} chunks)", 
+            print_message(f"Progress: {progress:.1f}% ({processed_chunks}/{total_chunks} chunks)",
                         argvs.silent, begin_t, logfile)
-            
+
             # Merge results from this chunk
             for taxid, seqs in chunk_results.items():
                 if taxid not in all_taxon_seqs:
                     all_taxon_seqs[taxid] = []
-                
+
                 # Add sequences, respecting the max_per_taxon limit
                 remaining = max_per_taxon - len(all_taxon_seqs[taxid])
                 if remaining > 0:
                     all_taxon_seqs[taxid].extend(seqs[:remaining])
-        
+
         # Clean up this batch's pool
         pool.close()
         pool.join()
-    
+
     # Write sequences to output file
-    print_message("Writing sequences to output file...", 
+    print_message("Writing sequences to output file...",
                 argvs.silent, begin_t, logfile)
-    
+
     total_seqs = 0
     taxon_count = 0
-    
+
     for taxid, seqs in all_taxon_seqs.items():
         if seqs:  # If we got any sequences for this taxon
             taxon_count += 1
             for seq in seqs:  # Write up to max_per_taxon
                 o.write(seq)
                 total_seqs += 1
-    
+
     return taxon_count, total_seqs
 
 def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_taxids, taxid_lineages, matchFactor, max_per_taxon):
     """
     Worker function that processes a chunk of the SAM file and extracts sequences for all taxa.
-    
+
     Parameters:
         filename (str): Path to the SAM file
         chunkStart (int): Starting position in the file
@@ -1347,36 +1350,36 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_t
         taxid_lineages (dict): Cache for lineage lookups
         matchFactor (float): Minimum fraction required for a valid match
         max_per_taxon (int): Maximum sequences to extract per taxon
-        
+
     Returns:
         dict: Dictionary mapping taxids to lists of their FASTA sequences
     """
     taxon_seqs = {}  # Dictionary to hold sequences for each taxid
     processed_lines = 0
-    
+
     # Process the SAM file chunk
     f = open(filename)
     f.seek(chunkStart)
     lines = f.read(chunkSize).splitlines()
-    
+
     # Create a more efficient lookup for cached lineages
     lineage_cache = {}
-    
+
     for line in lines:
         processed_lines += 1
-        
+
         try:
             ref, region, nm, rname, rseq, rq, flag, cigr, pri_aln_flag, valid_flag = parse(line, matchFactor)
-            
+
             if not (pri_aln_flag and valid_flag):
                 continue
-                
+
             # Extract taxid from reference
             try:
                 acc, rstart, rend, ref_taxid = ref.split('|')
             except ValueError:
                 continue  # Skip malformed references
-            
+
             # Check if we already know what qualified taxa this reference belongs to
             if ref_taxid in lineage_cache:
                 matching_taxids = lineage_cache[ref_taxid]
@@ -1384,18 +1387,18 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_t
                 # If not, find all qualified taxa this reference belongs to
                 matching_taxids = []
                 ref_lineage = None
-                
+
                 for q_taxid in qualified_taxids:
                     # Avoid recomputing the lineage for each taxid check
                     if ref_lineage is None:
                         ref_lineage = gt.taxid2fullLineage(ref_taxid, space2underscore=False)
-                    
+
                     if f"|{q_taxid}|" in ref_lineage:
                         matching_taxids.append(q_taxid)
-                
+
                 # Cache the result
                 lineage_cache[ref_taxid] = matching_taxids
-            
+
             # Process the matching taxa
             for taxid in matching_taxids:
                 # Handle reverse complement if needed
@@ -1408,11 +1411,11 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_t
                     seq_to_use = rc_seq
                 else:
                     seq_to_use = rseq
-                
+
                 # Initialize list for this taxid if needed
                 if taxid not in taxon_seqs:
                     taxon_seqs[taxid] = []
-                
+
                 # Only collect up to max_per_taxon sequences per taxon
                 if len(taxon_seqs[taxid]) < max_per_taxon:
                     # Create FASTA entry with taxonomy information
@@ -1423,7 +1426,7 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_t
         except Exception as e:
             # Skip problematic lines
             continue
-    
+
     return taxon_seqs
 
 def main(args):
@@ -1458,7 +1461,7 @@ def main(args):
     #dependency check
     if sys.version_info < (3,6):
         sys.exit("[ERROR] Python 3.6 or above is required.")
-    
+
     dependency_check("minimap2")
     # dependency_check("gawk")
 
@@ -1482,8 +1485,6 @@ def main(args):
         outfile = "%s/%s.tsv" % (argvs.outdir, argvs.prefix)
         if argvs.extract:
             outfile = "%s/%s.extract.fastq" % (argvs.outdir, argvs.prefix)
-        elif argvs.extractFasta:
-            outfile = "%s/%s.extract.fasta" % (argvs.outdir, argvs.prefix)
         elif argvs.format == "csv":
             outfile = "%s/%s.csv" % (argvs.outdir, argvs.prefix)
         elif argvs.format == "biom":
@@ -1516,7 +1517,7 @@ def main(args):
     custom_taxa_tsv = None
     if os.path.isfile( argvs.database + ".tax.tsv" ):
         custom_taxa_tsv = argvs.database + ".tax.tsv"
-    
+
     gt.loadTaxonomy( argvs.taxInfo, custom_taxa_tsv )
     print_message( "Done.", argvs.silent, begin_t, logfile )
 
@@ -1575,24 +1576,23 @@ def main(args):
             print_message("Loading SAM file...", argvs.silent, begin_t, logfile)
             (res, mapped_r_cnt) = process_sam_file(os.path.abspath(samfile), argvs.threads, argvs.matchFactor)
             print_message(f"Done processing SAM file. {mapped_r_cnt} qualified mapped reads loaded.", argvs.silent, begin_t, logfile)
-            
+
             if mapped_r_cnt:
                 res_df = aggregate_taxonomy(res, argvs.relAbu, argvs.dbLevel, argvs.minCov, argvs.minReads, argvs.minLen, argvs.maxZscore)
                 print_message("Done taxonomy rolling up.", argvs.silent, begin_t, logfile)
-                
+
                 if not len(res_df):
                     print_message("No qualified taxonomy profiled.", argvs.silent, begin_t, logfile)
                 else:
                     # Generate the full taxonomy file
-                    full_report_file = f"{argvs.outdir}/{argvs.prefix}.full.tsv"
-                    with open(full_report_file, 'w') as full_rep:
-                        generaete_taxonomy_file(res_df, full_rep, full_report_file, "tsv")
-                    
+                    generaete_taxonomy_file(res_df, out_fp, outfile_full, argvs.format)
+
                     # Extract FASTA sequences based on the taxonomy entries
                     print_message(f"Extracting up to {argvs.extractFasta} FASTA sequences per taxon...", argvs.silent, begin_t, logfile)
-                    taxon_count, seq_count = extract_fasta_by_taxonomy(os.path.abspath(samfile), full_report_file, 
-                                                                       out_fp, argvs.threads, argvs.matchFactor, argvs.extractFasta)
-                    print_message(f"Done extracting {seq_count} sequences from {taxon_count} taxa to '{outfile}'.", 
+                    with open("%s/%s.extract.fasta" % (argvs.outdir, argvs.prefix), "w") as fasta_out:
+                        taxon_count, seq_count = extract_fasta_by_taxonomy(os.path.abspath(samfile), outfile_full,
+                                                                           fasta_out, argvs.threads, argvs.matchFactor, argvs.extractFasta)
+                    print_message(f"Done extracting {seq_count} sequences from {taxon_count} taxa to '{outfile}'.",
                                  argvs.silent, begin_t, logfile)
             else:
                 print_message("No qualified mapped reads found. Cannot extract sequences.", argvs.silent, begin_t, logfile)
