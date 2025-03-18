@@ -1231,13 +1231,10 @@ def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, m
     except Exception as e:
         print_message(f"Error reading taxonomy file: {e}", argvs.silent, begin_t, logfile, errorout=1)
     
-    # Filter out entries with "Filtered out" notes
-    if 'NOTE' in taxa_df.columns:
-        qualified_taxa = taxa_df[~taxa_df['NOTE'].str.contains('Filtered out', na=False)]
-        print_message(f"Found {len(qualified_taxa)} qualified taxa after filtering", 
-                    argvs.silent, begin_t, logfile)
-    else:
-        qualified_taxa = taxa_df
+    # IMPORTANT CHANGE: Use ALL taxa from the file, not just qualified ones
+    qualified_taxa = taxa_df
+    print_message(f"Using all {len(qualified_taxa)} taxa from the taxonomy report for extraction", 
+                argvs.silent, begin_t, logfile)
     
     # Ensure these columns exist
     if not all(col in qualified_taxa.columns for col in ['LEVEL', 'NAME', 'TAXID']):
@@ -1249,22 +1246,12 @@ def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, m
     print_message("Building taxonomy lookup index...", 
                 argvs.silent, begin_t, logfile)
     
-    taxa_dict = {}
-    taxid_lineages = {}  # Cache for lineage lookups
+    # Print some sample taxa for debugging
+    if argvs.debug and len(qualified_taxa) > 0:
+        print_message(f"Sample taxa for extraction: {qualified_taxa['TAXID'].head(5).tolist()}", 
+                    argvs.silent, begin_t, logfile)
     
-    # Gather all qualified taxids
-    qualified_taxids = []
-    for _, row in qualified_taxa[['LEVEL', 'NAME', 'TAXID']].iterrows():
-        if pd.notna(row['TAXID']):
-            taxid = str(row['TAXID']).strip()
-            qualified_taxids.append(taxid)
-            taxa_dict[taxid] = {
-                'level': str(row['LEVEL']).replace(' ', '_') if pd.notna(row['LEVEL']) else 'unknown',
-                'name': str(row['NAME']).replace(' ', '_') if pd.notna(row['NAME']) else 'unknown'
-            }
-    
-    print_message(f"Starting extraction for {len(qualified_taxids)} taxa...", 
-                argvs.silent, begin_t, logfile)
+    # Rest of the function remains the same...
     
     # Calculate total file size for progress reporting
     file_size = os.path.getsize(sam_fn)
@@ -1291,7 +1278,7 @@ def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, m
         for chunkStart, chunkSize in batch_chunks:
             jobs.append(pool.apply_async(
                 OptimizedFastaWorker, 
-                (sam_fn, chunkStart, chunkSize, taxa_dict, qualified_taxids, taxid_lineages, matchFactor, max_per_taxon)
+                (sam_fn, chunkStart, chunkSize, qualified_taxa, matchFactor, max_per_taxon)
             ))
         
         # Process results as they complete
@@ -1334,7 +1321,7 @@ def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, m
     
     return taxon_count, total_seqs
 
-def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_taxids, taxid_lineages, matchFactor, max_per_taxon):
+def OptimizedFastaWorker(filename, chunkStart, chunkSize, qualified_taxa, matchFactor, max_per_taxon):
     """
     Worker function that processes a chunk of the SAM file and extracts sequences for all taxa.
     
@@ -1342,9 +1329,7 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_t
         filename (str): Path to the SAM file
         chunkStart (int): Starting position in the file
         chunkSize (int): Size of the chunk to process
-        taxa_dict (dict): Dictionary mapping taxids to their level and name
-        qualified_taxids (list): List of taxids to check against
-        taxid_lineages (dict): Cache for lineage lookups
+        qualified_taxa (DataFrame): DataFrame containing qualified taxa
         matchFactor (float): Minimum fraction required for a valid match
         max_per_taxon (int): Maximum sequences to extract per taxon
         
@@ -1385,7 +1370,7 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_t
                 matching_taxids = []
                 ref_lineage = None
                 
-                for q_taxid in qualified_taxids:
+                for q_taxid in qualified_taxa['TAXID']:
                     # Avoid recomputing the lineage for each taxid check
                     if ref_lineage is None:
                         ref_lineage = gt.taxid2fullLineage(ref_taxid, space2underscore=False)
@@ -1416,8 +1401,8 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, taxa_dict, qualified_t
                 # Only collect up to max_per_taxon sequences per taxon
                 if len(taxon_seqs[taxid]) < max_per_taxon:
                     # Create FASTA entry with taxonomy information
-                    level = taxa_dict[taxid]['level']
-                    name = taxa_dict[taxid]['name']
+                    level = qualified_taxa.loc[qualified_taxa['TAXID'] == taxid, 'LEVEL'].values[0]
+                    name = qualified_taxa.loc[qualified_taxa['TAXID'] == taxid, 'NAME'].values[0]
                     fasta_entry = f">{rname}|{ref}:{region[0]}..{region[1]} LEVEL={level} NAME={name} TAXID={taxid}\n{seq_to_use}\n"
                     taxon_seqs[taxid].append(fasta_entry)
         except Exception as e:
