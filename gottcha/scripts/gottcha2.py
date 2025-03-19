@@ -1324,17 +1324,6 @@ def extract_fasta_by_taxonomy(sam_fn, full_tsv_fn, o, numthreads, matchFactor, m
 def OptimizedFastaWorker(filename, chunkStart, chunkSize, qualified_taxa, matchFactor, max_per_taxon):
     """
     Worker function that processes a chunk of the SAM file and extracts sequences for all taxa.
-    
-    Parameters:
-        filename (str): Path to the SAM file
-        chunkStart (int): Starting position in the file
-        chunkSize (int): Size of the chunk to process
-        qualified_taxa (DataFrame): DataFrame containing qualified taxa
-        matchFactor (float): Minimum fraction required for a valid match
-        max_per_taxon (int): Maximum sequences to extract per taxon
-        
-    Returns:
-        dict: Dictionary mapping taxids to lists of their FASTA sequences
     """
     taxon_seqs = {}  # Dictionary to hold sequences for each taxid
     processed_lines = 0
@@ -1344,8 +1333,8 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, qualified_taxa, matchF
     f.seek(chunkStart)
     lines = f.read(chunkSize).splitlines()
     
-    # Create a more efficient lookup for cached lineages
-    lineage_cache = {}
+    # Create a set of all taxids in the qualified_taxa for faster lookup
+    all_taxids = set(qualified_taxa['TAXID'].tolist())
     
     for line in lines:
         processed_lines += 1
@@ -1362,34 +1351,40 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, qualified_taxa, matchF
             except ValueError:
                 continue  # Skip malformed references
             
-            # Check if we already know what qualified taxa this reference belongs to
-            if ref_taxid in lineage_cache:
-                matching_taxids = lineage_cache[ref_taxid]
-            else:
-                # If not, find all qualified taxa this reference belongs to
-                matching_taxids = []
-                ref_lineage = None
-                
-                for q_taxid in qualified_taxa['TAXID']:
-                    # Avoid recomputing the lineage for each taxid check
-                    if ref_lineage is None:
-                        ref_lineage = gt.taxid2fullLineage(ref_taxid, space2underscore=False)
+            # DIRECT MATCH: Find any taxa in the qualified_taxa DataFrame that match this reference
+            # This happens in two ways:
+            # 1. Direct match of the reference taxid if it's in the dataframe
+            # 2. For any GCF accession in the TAXID column, match it to this reference
+            
+            # Define an empty list of matching taxids
+            matching_taxids = []
+            
+            # Try direct match first
+            if ref_taxid in all_taxids:
+                matching_taxids.append(ref_taxid)
+            
+            # If no direct match, try to match through lineage
+            if not matching_taxids:
+                try:
+                    # Get the full lineage of this reference taxid
+                    ref_lineage = gt.taxid2fullLineage(ref_taxid, space2underscore=False)
                     
-                    if f"|{q_taxid}|" in ref_lineage:
-                        matching_taxids.append(q_taxid)
-                
-                # Cache the result
-                lineage_cache[ref_taxid] = matching_taxids
+                    # Check if any taxa in the qualified_taxa dataframe are in the lineage
+                    for taxid in all_taxids:
+                        if f"|{taxid}|" in ref_lineage:
+                            matching_taxids.append(taxid)
+                except:
+                    # Lineage lookup failed, might be a GCF accession or invalid taxid
+                    pass
             
             # Process the matching taxa
             for taxid in matching_taxids:
                 # Handle reverse complement if needed
                 rc_seq = None
                 if int(flag) & 16:
-                    if rc_seq is None:  # Only compute once if needed
-                        g = findall(r'\d+\w', cigr)
-                        cigr = "".join(list(reversed(g)))
-                        rc_seq = seqReverseComplement(rseq)
+                    g = findall(r'\d+\w', cigr)
+                    cigr = "".join(list(reversed(g)))
+                    rc_seq = seqReverseComplement(rseq)
                     seq_to_use = rc_seq
                 else:
                     seq_to_use = rseq
@@ -1400,14 +1395,24 @@ def OptimizedFastaWorker(filename, chunkStart, chunkSize, qualified_taxa, matchF
                 
                 # Only collect up to max_per_taxon sequences per taxon
                 if len(taxon_seqs[taxid]) < max_per_taxon:
+                    # Get taxonomy info
+                    level_series = qualified_taxa.loc[qualified_taxa['TAXID'] == taxid, 'LEVEL']
+                    name_series = qualified_taxa.loc[qualified_taxa['TAXID'] == taxid, 'NAME']
+                    
+                    # Use safe access to prevent IndexError
+                    level = level_series.values[0] if not level_series.empty else "unknown"
+                    name = name_series.values[0] if not name_series.empty else "unknown"
+                    
                     # Create FASTA entry with taxonomy information
-                    level = qualified_taxa.loc[qualified_taxa['TAXID'] == taxid, 'LEVEL'].values[0]
-                    name = qualified_taxa.loc[qualified_taxa['TAXID'] == taxid, 'NAME'].values[0]
                     fasta_entry = f">{rname}|{ref}:{region[0]}..{region[1]} LEVEL={level} NAME={name} TAXID={taxid}\n{seq_to_use}\n"
                     taxon_seqs[taxid].append(fasta_entry)
         except Exception as e:
             # Skip problematic lines
             continue
+    
+    # Add debugging for empty results
+    if len(taxon_seqs) == 0 and processed_lines > 0:
+        logging.debug(f"No matching sequences found in chunk ({processed_lines} lines processed)")
     
     return taxon_seqs
 
